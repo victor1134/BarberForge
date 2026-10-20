@@ -1,0 +1,74 @@
+services:
+  bf-db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: barber
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-barber}
+      POSTGRES_DB: barber
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U barber"]
+      interval: 5s
+      retries: 12
+    restart: unless-stopped
+
+  # API FastAPI. Al arrancar aplica las migraciones de Alembic (alembic upgrade head).
+  bf-api:
+    build: ./codigo/backend
+    environment:
+      DB_HOST: bf-db
+      DB_USER: barber
+      DB_NAME: barber
+      DB_PASSWORD: ${DB_PASSWORD:-barber}
+      JWT_SECRET: ${JWT_SECRET:-cambia-este-secreto}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      OLLAMA_URL: http://bf-ollama:11434
+      LLM_MODEL: ${LLM_MODEL:-llama3}
+      SMTP_HOST: ${SMTP_HOST:-mailhog}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8080}
+      SEED_DEMO: ${SEED_DEMO:-true}
+      MAILHOG_URL: ${MAILHOG_URL:-}
+      BARBERIA_NOMBRE: ${BARBERIA_NOMBRE:-BarberForge Popayán}
+      ZONA_HORARIA: ${ZONA_HORARIA:-America/Bogota}
+    depends_on:
+      bf-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      retries: 5
+    restart: unless-stopped
+
+  # Frontend Next.js exportado como sitio estático y servido por nginx, que reenvía /api a bf-api.
+  web:
+    build: ./codigo/frontend
+    depends_on:
+      - bf-api
+    restart: unless-stopped
+
+  bf-ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama:/root/.ollama
+    restart: unless-stopped
+
+  ollama-init:
+    image: ollama/ollama:latest
+    depends_on:
+      - bf-ollama
+    environment:
+      OLLAMA_HOST: http://bf-ollama:11434
+      LLM_MODEL: ${LLM_MODEL:-llama3}
+    entrypoint: ["/bin/sh", "-c", "ollama pull nomic-embed-text && ollama pull $$LLM_MODEL"]
+    restart: "no"
+
+  mailhog:
+    image: mailhog/mailhog:latest
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  ollama:
