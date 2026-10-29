@@ -1,0 +1,47 @@
+name: ci-cd
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: codigo/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip, cache-dependency-path: codigo/backend/requirements-dev.txt }
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check .
+      - run: pytest
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: codigo/frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "22", cache: npm, cache-dependency-path: codigo/frontend/package-lock.json }
+      - run: npm ci
+      - run: npm run build
+
+  imagenes:
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose -f docker-compose.yml build
+      - uses: aquasecurity/trivy-action@0.24.0
+        with: { scan-type: fs, scan-ref: codigo, severity: CRITICAL, exit-code: "1" }
+
+  desplegar:
+    needs: imagenes
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - run: curl -fsS -X POST "${{ secrets.DOKPLOY_WEBHOOK_URL }}"
