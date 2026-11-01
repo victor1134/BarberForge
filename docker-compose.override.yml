@@ -1,0 +1,8 @@
+# Solo para desarrollo local (docker compose up). Dokploy usa únicamente docker-compose.yml.
+services:
+  web:
+    ports:
+      - "8080:80"
+  mailhog:
+    ports:
+      - "8025:8025"
